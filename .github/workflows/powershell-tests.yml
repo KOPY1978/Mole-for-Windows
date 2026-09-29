@@ -1,0 +1,44 @@
+name: PowerShell safety tests
+
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - '.github/workflows/powershell-tests.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - '.github/workflows/powershell-tests.yml'
+
+jobs:
+  pester:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shell: powershell
+            runtime: Windows PowerShell 5.1
+          - shell: pwsh
+            runtime: PowerShell 7
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Pester 6 (${{ matrix.runtime }})
+        shell: ${{ matrix.shell }}
+        run: |
+          Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Scope CurrentUser -Force
+          Install-Module -Name Pester -MinimumVersion 6.0.0 -Scope CurrentUser -Force -SkipPublisherCheck
+          Import-Module -Name Pester -MinimumVersion 6.0.0 -Force
+          (Get-Module -Name Pester).Version.ToString()
+      - name: Run safety tests
+        shell: ${{ matrix.shell }}
+        run: |
+          Import-Module -Name Pester -MinimumVersion 6.0.0 -Force
+          $result = Invoke-Pester -Path ./tests -PassThru
+          if ($result.FailedCount -gt 0) {
+            exit 1
+          }
