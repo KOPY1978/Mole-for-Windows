@@ -1,6 +1,7 @@
 name: PowerShell safety tests
 
 on:
+  workflow_dispatch:
   push:
     paths:
       - 'src/**'
@@ -14,31 +15,94 @@ on:
       - 'scripts/**'
       - '.github/workflows/powershell-tests.yml'
 
+permissions:
+  contents: read
+
 jobs:
-  pester:
+  pester-windows-powershell:
+    name: Windows PowerShell 5.1 / Pester 6.2.0
     runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - shell: powershell
-            runtime: Windows PowerShell 5.1
-          - shell: pwsh
-            runtime: PowerShell 7
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: powershell
     steps:
       - uses: actions/checkout@v4
-      - name: Install Pester 6 (${{ matrix.runtime }})
-        shell: ${{ matrix.shell }}
+      - name: Install Pester 6.2.0
         run: |
+          $ErrorActionPreference = 'Stop'
+          [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
           Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Scope CurrentUser -Force
-          Install-Module -Name Pester -MinimumVersion 6.0.0 -Scope CurrentUser -Force -SkipPublisherCheck
-          Import-Module -Name Pester -MinimumVersion 6.0.0 -Force
-          (Get-Module -Name Pester).Version.ToString()
+          Install-Module -Name Pester -RequiredVersion 6.2.0 -Scope CurrentUser -Force -SkipPublisherCheck
       - name: Run safety tests
-        shell: ${{ matrix.shell }}
         run: |
-          Import-Module -Name Pester -MinimumVersion 6.0.0 -Force
-          $result = Invoke-Pester -Path ./tests -PassThru
-          if ($result.FailedCount -gt 0) {
-            exit 1
+          $ErrorActionPreference = 'Stop'
+          $requiredFiles = @(
+            'src/Mole.Windows/Mole.Windows.psd1',
+            'src/Mole.Windows/Mole.Windows.psm1',
+            'src/Mole.Windows/Mole.Backup.ps1',
+            'src/Mole.Windows/Mole.Providers.ps1',
+            'scripts/mole.ps1',
+            'tests/Safety.Tests.ps1',
+            'tests/TestHelpers.ps1'
+          )
+          foreach ($path in $requiredFiles) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Incomplete source tree: $path"
+            }
           }
+          Import-Module -Name Pester -RequiredVersion 6.2.0 -Force
+          $result = Invoke-Pester -Path ./tests -PassThru -Output Detailed
+          if ($null -eq $result -or $result.TotalCount -lt 21 -or
+              $result.Result -ne 'Passed' -or $result.FailedCount -gt 0 -or
+              $result.SkippedCount -gt 0 -or $result.NotRunCount -gt 0) {
+            throw 'Safety gate failed: require at least 21 tests, all passed, none skipped or not run.'
+          }
+      - name: CLI smoke checks
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/mole.ps1 status
+          ./scripts/mole.ps1 providers
+
+  pester-pwsh:
+    name: PowerShell 7 / Pester 6.2.0
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Pester 6.2.0
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Install-Module -Name Pester -RequiredVersion 6.2.0 -Scope CurrentUser -Force -SkipPublisherCheck
+      - name: Run safety tests
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $requiredFiles = @(
+            'src/Mole.Windows/Mole.Windows.psd1',
+            'src/Mole.Windows/Mole.Windows.psm1',
+            'src/Mole.Windows/Mole.Backup.ps1',
+            'src/Mole.Windows/Mole.Providers.ps1',
+            'scripts/mole.ps1',
+            'tests/Safety.Tests.ps1',
+            'tests/TestHelpers.ps1'
+          )
+          foreach ($path in $requiredFiles) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Incomplete source tree: $path"
+            }
+          }
+          Import-Module -Name Pester -RequiredVersion 6.2.0 -Force
+          $result = Invoke-Pester -Path ./tests -PassThru -Output Detailed
+          if ($null -eq $result -or $result.TotalCount -lt 21 -or
+              $result.Result -ne 'Passed' -or $result.FailedCount -gt 0 -or
+              $result.SkippedCount -gt 0 -or $result.NotRunCount -gt 0) {
+            throw 'Safety gate failed: require at least 21 tests, all passed, none skipped or not run.'
+          }
+      - name: CLI smoke checks
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/mole.ps1 status
+          ./scripts/mole.ps1 providers

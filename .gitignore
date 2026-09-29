@@ -1,0 +1,5 @@
+# Local verification evidence, original snapshots, and downloaded references.
+.artifacts/
+
+# Generated Pester reports.
+TestResults.xml
